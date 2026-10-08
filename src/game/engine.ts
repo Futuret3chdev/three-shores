@@ -38,8 +38,8 @@ export function mountShores(
     arrow: HTMLElement | null;
   },
 ): ShoreHandle {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setClearColor(0x000000, 0);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setClearColor(0x9aa7a4, 1);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.shadowMap.enabled = false;
@@ -47,8 +47,8 @@ export function mountShores(
   renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#9aa7a4");
-  scene.fog = new THREE.Fog("#9aa7a4", 28, 90);
+  scene.background = new THREE.Color("#b7c4c2");
+  scene.fog = null;
 
   const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 160);
   const hemi = new THREE.HemisphereLight("#fff1dc", "#3a2a22", 1.15);
@@ -329,7 +329,8 @@ export function mountShores(
         brisbane: "#7ec0d8",
       };
       scene.background = new THREE.Color(skies[id]);
-      scene.fog = new THREE.Fog(skies[id], 28, 90);
+      scene.fog = null;
+      renderer.setClearColor(skies[id], 1);
       opts.onCity(id);
       opts.onMotes(0, city.motes.length);
     },
