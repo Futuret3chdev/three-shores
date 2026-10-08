@@ -38,53 +38,64 @@ export function mountShores(
     arrow: HTMLElement | null;
   },
 ): ShoreHandle {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setClearColor(0x000000, 0);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = false;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.25;
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(180, 28, 16),
-    new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      vertexShader: `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      fragmentShader: `varying vec3 vP; void main(){
-        float h = normalize(vP).y;
-        vec3 hor = vec3(0.96, 0.62, 0.34);
-        vec3 mid = vec3(0.55, 0.32, 0.38);
-        vec3 top = vec3(0.10, 0.14, 0.28);
-        vec3 col = mix(hor, mid, smoothstep(0.0, 0.28, h));
-        col = mix(col, top, smoothstep(0.2, 0.85, h));
-        gl_FragColor = vec4(col, 1.0);
-      }`,
-    }),
-  );
+  renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
-  scene.add(sky);
-  scene.background = new THREE.Color("#c47a48");
-  scene.fog = new THREE.Fog("#c47a48", 48, 150);
 
-  const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 240);
-  const hemi = new THREE.HemisphereLight("#ffd2a8", "#2a2118", 0.85);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 80);
+  const hemi = new THREE.HemisphereLight("#fff1dc", "#3a2a22", 1.15);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight("#ffc48a", 2.1);
-  sun.position.set(30, 48, 18);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 140;
-  sun.shadow.camera.left = -50;
-  sun.shadow.camera.right = 50;
-  sun.shadow.camera.top = 50;
-  sun.shadow.camera.bottom = -50;
+  const sun = new THREE.DirectionalLight("#ffe0b0", 1.6);
+  sun.position.set(18, 28, 12);
   scene.add(sun);
 
   const rig = createRunner();
   scene.add(rig.root);
+
+  const ledgeMat = new THREE.MeshStandardMaterial({
+    color: "#3a2c22",
+    roughness: 0.62,
+    metalness: 0.18,
+    transparent: true,
+    opacity: 0.72,
+  });
+
+  function dressCity(group: THREE.Group) {
+    group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.userData.keep) return;
+      if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
+        mesh.visible = false;
+        return;
+      }
+      if (!mesh.isMesh) return;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      const geo = mesh.geometry;
+      if (!geo || geo.type !== "BoxGeometry") {
+        mesh.visible = false;
+        return;
+      }
+      geo.computeBoundingBox();
+      const size = new THREE.Vector3();
+      geo.boundingBox?.getSize(size);
+      const top = mesh.position.y + size.y / 2;
+      const building = size.y > 1.2;
+      const ground = top < 0.45 && (size.x > 14 || size.z > 14);
+      if (building || ground) {
+        mesh.visible = false;
+        return;
+      }
+      mesh.visible = true;
+      mesh.material = ledgeMat;
+    });
+  }
 
   const keys = new Set<string>();
   let qa: Set<string> | null = null;
@@ -92,10 +103,12 @@ export function mountShores(
   let jumpQueued = false;
 
   let city: CityBuild = buildCity(opts.city);
+  dressCity(city.group);
   scene.add(city.group);
   let cityId = opts.city;
 
   const pos = city.spawn.clone();
+  const camFocus = pos.clone();
   let yaw = city.spawnYaw;
   let speed = 0;
   let vy = 0;
@@ -125,9 +138,14 @@ export function mountShores(
   window.addEventListener("keyup", onUp);
   window.addEventListener("blur", clear);
 
+  let sizedW = 0;
+  let sizedH = 0;
   function resize() {
     const w = canvas.clientWidth || 1;
     const h = canvas.clientHeight || 1;
+    if (Math.abs(w - sizedW) < 3 && Math.abs(h - sizedH) < 3) return;
+    sizedW = w;
+    sizedH = h;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -144,6 +162,7 @@ export function mountShores(
 
   function resetSpawn() {
     pos.copy(city.spawn);
+    camFocus.copy(city.spawn);
     yaw = city.spawnYaw;
     speed = 0;
     vy = 0;
@@ -168,8 +187,10 @@ export function mountShores(
     if (held("KeyS") || held("ArrowDown")) throttle -= 1;
     const sprint = held("ShiftLeft") || held("ShiftRight") || (qa == null && touch.sprint);
     if (qa == null) {
-      if (steer === 0) steer = touch.steer;
-      if (throttle === 0 && (touch.throttle !== 0 || touch.sprint)) throttle = touch.throttle;
+      const steerTouch = Math.abs(touch.steer) < 0.2 ? 0 : touch.steer;
+      const throttleTouch = Math.abs(touch.throttle) < 0.2 ? 0 : touch.throttle;
+      if (steer === 0) steer = steerTouch;
+      if (throttle === 0) throttle = throttleTouch;
       if (touch.jump) {
         jumpQueued = true;
         touch.jump = false;
@@ -284,20 +305,24 @@ export function mountShores(
     animateRunner(rig, t, speed, grounded);
     city.tick(t);
 
-    const fx = -Math.sin(yaw);
-    const fz = -Math.cos(yaw);
-    const desiredX = pos.x - fx * 6.4;
-    const desiredY = pos.y + 2.55;
-    const desiredZ = pos.z - fz * 6.4;
-    const k = 1 - Math.exp(-4.5 * dt);
-    camera.position.x += (desiredX - camera.position.x) * k;
-    camera.position.y += (desiredY - camera.position.y) * k;
-    camera.position.z += (desiredZ - camera.position.z) * k;
-    camera.lookAt(pos.x, pos.y + 1.35, pos.z);
+    // Locked frame. The photograph stays put. The camera only eases
+    // after the runner has actually left the middle of the shot.
+    const dx = pos.x - camFocus.x;
+    const dy = pos.y - camFocus.y;
+    const dz = pos.z - camFocus.z;
+    if (dx * dx + dy * dy + dz * dz > 1.1) {
+      const k = 1 - Math.exp(-2.4 * dt);
+      camFocus.x += dx * k;
+      camFocus.y += dy * k * 0.25;
+      camFocus.z += dz * k;
+    }
+    camera.position.set(camFocus.x, camFocus.y + 3.1, camFocus.z + 7.6);
+    camera.lookAt(camFocus.x, camFocus.y + 1.15, camFocus.z);
     renderer.render(scene, camera);
   }
 
-  camera.position.set(pos.x, pos.y + 3, pos.z + 7);
+  camera.position.set(camFocus.x, camFocus.y + 3.1, camFocus.z + 7.6);
+  camera.lookAt(camFocus.x, camFocus.y + 1.15, camFocus.z);
   raf = requestAnimationFrame(frame);
   opts.onMotes(0, city.motes.length);
 
@@ -325,6 +350,7 @@ export function mountShores(
       scene.remove(city.group);
       city.dispose();
       city = buildCity(id);
+      dressCity(city.group);
       scene.add(city.group);
       cityId = id;
       taken.clear();

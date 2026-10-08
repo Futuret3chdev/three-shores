@@ -141,6 +141,7 @@ export function buildCity(id: CityId): CityBuild {
     );
     const mesh = new THREE.Mesh(track(new THREE.TorusGeometry(0.28, 0.07, 8, 16)), gold);
     mesh.position.set(x, y, z);
+    mesh.userData.keep = true;
     group.add(mesh);
     motes.push(mesh);
   }
@@ -468,6 +469,7 @@ export function buildCity(id: CityId): CityBuild {
     }),
   );
   const crystal = new THREE.Mesh(track(new THREE.OctahedronGeometry(0.7, 0)), crystalMat);
+  crystal.userData.keep = true;
   crystal.position.copy(beacon);
   group.add(crystal);
   const light = new THREE.PointLight("#7ef0dc", 4, 14);
