@@ -140,7 +140,9 @@ function Home() {
 
   return (
     <main className="shore-shell">
-      <div className="shore-photo" style={{ backgroundImage: `url(/shores/${city}.jpg)` }} />
+      {!playing && (
+        <div className="shore-photo" style={{ backgroundImage: `url(/shores/${city}.jpg)` }} />
+      )}
       <div className="canvas-wrap" style={{ visibility: playing ? "visible" : "hidden" }}>
         <canvas ref={canvasRef} />
       </div>
