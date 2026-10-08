@@ -47,8 +47,10 @@ export function mountShores(
   renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color("#9aa7a4");
+  scene.fog = new THREE.Fog("#9aa7a4", 28, 90);
 
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 80);
+  const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 160);
   const hemi = new THREE.HemisphereLight("#fff1dc", "#3a2a22", 1.15);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight("#ffe0b0", 1.6);
@@ -58,42 +60,13 @@ export function mountShores(
   const rig = createRunner();
   scene.add(rig.root);
 
-  const ledgeMat = new THREE.MeshStandardMaterial({
-    color: "#3a2c22",
-    roughness: 0.62,
-    metalness: 0.18,
-    transparent: true,
-    opacity: 0.72,
-  });
-
   function dressCity(group: THREE.Group) {
     group.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
-      if (mesh.userData.keep) return;
-      if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
-        mesh.visible = false;
-        return;
-      }
       if (!mesh.isMesh) return;
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      const geo = mesh.geometry;
-      if (!geo || geo.type !== "BoxGeometry") {
-        mesh.visible = false;
-        return;
-      }
-      geo.computeBoundingBox();
-      const size = new THREE.Vector3();
-      geo.boundingBox?.getSize(size);
-      const top = mesh.position.y + size.y / 2;
-      const building = size.y > 1.2;
-      const ground = top < 0.45 && (size.x > 14 || size.z > 14);
-      if (building || ground) {
-        mesh.visible = false;
-        return;
-      }
       mesh.visible = true;
-      mesh.material = ledgeMat;
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
     });
   }
 
@@ -108,7 +81,6 @@ export function mountShores(
   let cityId = opts.city;
 
   const pos = city.spawn.clone();
-  const camFocus = pos.clone();
   let yaw = city.spawnYaw;
   let speed = 0;
   let vy = 0;
@@ -117,6 +89,7 @@ export function mountShores(
   let live = false;
   let claimed = false;
   const taken = new Set<number>();
+  const camDesired = new THREE.Vector3();
 
   const held = (code: string) => (qa ?? keys).has(code);
 
@@ -162,11 +135,19 @@ export function mountShores(
 
   function resetSpawn() {
     pos.copy(city.spawn);
-    camFocus.copy(city.spawn);
     yaw = city.spawnYaw;
     speed = 0;
     vy = 0;
     grounded = true;
+  }
+
+  function followCamera(dt: number) {
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    camDesired.set(pos.x - fx * 7.4, pos.y + 2.7, pos.z - fz * 7.4);
+    const k = 1 - Math.exp(-7 * dt);
+    camera.position.lerp(camDesired, k);
+    camera.lookAt(pos.x, pos.y + 1.25, pos.z);
   }
 
   let last = performance.now();
@@ -304,25 +285,11 @@ export function mountShores(
     rig.root.rotation.y = yaw + Math.PI;
     animateRunner(rig, t, speed, grounded);
     city.tick(t);
-
-    // Locked frame. The photograph stays put. The camera only eases
-    // after the runner has actually left the middle of the shot.
-    const dx = pos.x - camFocus.x;
-    const dy = pos.y - camFocus.y;
-    const dz = pos.z - camFocus.z;
-    if (dx * dx + dy * dy + dz * dz > 1.1) {
-      const k = 1 - Math.exp(-2.4 * dt);
-      camFocus.x += dx * k;
-      camFocus.y += dy * k * 0.25;
-      camFocus.z += dz * k;
-    }
-    camera.position.set(camFocus.x, camFocus.y + 3.1, camFocus.z + 7.6);
-    camera.lookAt(camFocus.x, camFocus.y + 1.15, camFocus.z);
+    followCamera(dt);
     renderer.render(scene, camera);
   }
 
-  camera.position.set(camFocus.x, camFocus.y + 3.1, camFocus.z + 7.6);
-  camera.lookAt(camFocus.x, camFocus.y + 1.15, camFocus.z);
+  followCamera(1);
   raf = requestAnimationFrame(frame);
   opts.onMotes(0, city.motes.length);
 
@@ -356,6 +323,13 @@ export function mountShores(
       taken.clear();
       claimed = false;
       resetSpawn();
+      const skies: Record<CityId, string> = {
+        melbourne: "#9aa7a4",
+        sydney: "#8eb4c9",
+        brisbane: "#7ec0d8",
+      };
+      scene.background = new THREE.Color(skies[id]);
+      scene.fog = new THREE.Fog(skies[id], 28, 90);
       opts.onCity(id);
       opts.onMotes(0, city.motes.length);
     },
